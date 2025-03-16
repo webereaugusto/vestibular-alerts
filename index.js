@@ -9,7 +9,7 @@ const schedule = require('node-schedule');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || 'seu_segredo_jwt'; // Fallback caso não esteja no .env
 
 // Configurar o Mercado Pago
 const client = new MercadoPagoConfig({
@@ -34,6 +34,19 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: {
         rejectUnauthorized: false // Necessário para conexões externas como Neon
+    }
+});
+
+// Testar conexão com o banco ao iniciar
+pool.connect((err) => {
+    if (err) {
+        console.error('Erro ao conectar ao banco de dados:', {
+            message: err.message,
+            stack: err.stack
+        });
+        process.exit(1); // Encerra o processo se a conexão falhar
+    } else {
+        console.log('Conexão com o banco de dados estabelecida com sucesso!');
     }
 });
 
@@ -79,8 +92,12 @@ pool.query(`
         FOREIGN KEY (vestibular_id) REFERENCES vestibulares(id)
     );
 `, (err) => {
-    if (err) console.error('Erro ao criar tabelas:', err);
-    else {
+    if (err) {
+        console.error('Erro ao criar tabelas:', {
+            message: err.message,
+            stack: err.stack
+        });
+    } else {
         console.log('Tabelas criadas com sucesso!');
 
         // Inserir planos
@@ -89,7 +106,7 @@ pool.query(`
             VALUES ('Grátis', 2, 0.0), ('Intermediário', 6, 9.99), ('Premium', -1, 19.99)
             ON CONFLICT (id) DO NOTHING;
         `, (err) => {
-            if (err) console.error('Erro ao inserir planos:', err);
+            if (err) console.error('Erro ao inserir planos:', err.message);
             else console.log('Planos inseridos com sucesso!');
         });
 
@@ -102,7 +119,7 @@ pool.query(`
                 ('Unicamp 2025', 'Unicamp', '2025-05-10', '2025-06-10', '2025-06-15', '2025-05-05', '2025-11-25', '2025-12-18', '2026-01-25', '2026-02-10', '2026-02-25', '2026-03-10')
             ON CONFLICT (id) DO NOTHING;
         `, (err) => {
-            if (err) console.error('Erro ao inserir vestibulares:', err);
+            if (err) console.error('Erro ao inserir vestibulares:', err.message);
             else console.log('Vestibulares inseridos com sucesso!');
         });
     }
@@ -151,6 +168,7 @@ app.post('/register', async (req, res) => {
             token
         });
     } catch (error) {
+        console.error('Erro ao cadastrar usuário:', error.message);
         res.status(500).json({ error: 'Erro ao cadastrar usuário: ' + error.message });
     }
 });
@@ -184,6 +202,7 @@ app.post('/login', async (req, res) => {
             token
         });
     } catch (error) {
+        console.error('Erro ao processar login:', error.message);
         res.status(500).json({ error: 'Erro ao processar requisição: ' + error.message });
     }
 });
@@ -194,6 +213,7 @@ app.get('/vestibulares', async (req, res) => {
         const result = await pool.query('SELECT * FROM vestibulares');
         res.json(result.rows);
     } catch (error) {
+        console.error('Erro ao buscar vestibulares:', error.message);
         res.status(500).json({ error: 'Erro ao buscar vestibulares: ' + error.message });
     }
 });
@@ -210,6 +230,7 @@ app.get('/user', authenticateToken, async (req, res) => {
         const plan = planResult.rows[0];
         res.json({ user, plan });
     } catch (error) {
+        console.error('Erro ao buscar usuário:', error.message);
         res.status(500).json({ error: 'Erro ao buscar usuário: ' + error.message });
     }
 });
@@ -243,6 +264,7 @@ app.post('/user/vestibulares', authenticateToken, async (req, res) => {
         await pool.query('INSERT INTO user_vestibulares (user_id, vestibular_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [userId, vestibular_id]);
         res.json({ message: 'Vestibular selecionado com sucesso!' });
     } catch (error) {
+        console.error('Erro ao selecionar vestibular:', error.message);
         res.status(500).json({ error: 'Erro ao selecionar vestibular: ' + error.message });
     }
 });
@@ -258,6 +280,7 @@ app.get('/user/vestibulares', authenticateToken, async (req, res) => {
         `, [req.user.userId]);
         res.json(result.rows);
     } catch (error) {
+        console.error('Erro ao buscar vestibulares selecionados:', error.message);
         res.status(500).json({ error: 'Erro ao buscar vestibulares selecionados: ' + error.message });
     }
 });
@@ -293,6 +316,7 @@ app.post('/create-preference', async (req, res) => {
         const result = await preference.create({ body: preferenceData });
         res.json({ preferenceId: result.id });
     } catch (error) {
+        console.error('Erro ao criar preferência de pagamento:', error.message);
         res.status(500).json({ error: 'Erro ao criar preferência de pagamento: ' + error.message });
     }
 });
@@ -317,6 +341,7 @@ app.post('/webhook', async (req, res) => {
         }
         res.status(200).send('Webhook processado com sucesso.');
     } catch (error) {
+        console.error('Erro ao processar webhook:', error.message);
         res.status(500).json({ error: 'Erro ao processar webhook: ' + error.message });
     }
 });
@@ -340,53 +365,60 @@ const sendAlertEmail = async (to, subject, text) => {
 
 // Agendar alertas
 const scheduleAlerts = async () => {
-    const usersResult = await pool.query('SELECT * FROM users');
-    const users = usersResult.rows;
+    try {
+        const usersResult = await pool.query('SELECT * FROM users');
+        const users = usersResult.rows;
 
-    for (const user of users) {
-        const selectedVestibularesResult = await pool.query(`
-            SELECT v.* 
-            FROM vestibulares v 
-            JOIN user_vestibulares uv ON v.id = uv.vestibular_id 
-            WHERE uv.user_id = $1
-        `, [user.id]);
-        const selectedVestibulares = selectedVestibularesResult.rows;
+        for (const user of users) {
+            const selectedVestibularesResult = await pool.query(`
+                SELECT v.* 
+                FROM vestibulares v 
+                JOIN user_vestibulares uv ON v.id = uv.vestibular_id 
+                WHERE uv.user_id = $1
+            `, [user.id]);
+            const selectedVestibulares = selectedVestibularesResult.rows;
 
-        for (const vestibular of selectedVestibulares) {
-            const datesToAlert = [
-                { date: vestibular.start_registration, label: 'Início das inscrições' },
-                { date: vestibular.end_registration, label: 'Fim das inscrições' },
-                { date: vestibular.payment_deadline, label: 'Prazo de pagamento' },
-                { date: vestibular.exemption_deadline, label: 'Prazo para isenção' },
-                { date: vestibular.first_phase_date, label: 'Primeira fase' },
-                { date: vestibular.second_phase_date, label: 'Segunda fase' },
-                { date: vestibular.results_date, label: 'Resultados' },
-                { date: vestibular.first_call_date, label: 'Primeira chamada' },
-                { date: vestibular.enrollment_date, label: 'Matrícula' },
-                { date: vestibular.second_call_date, label: 'Segunda chamada' }
-            ];
+            for (const vestibular of selectedVestibulares) {
+                const datesToAlert = [
+                    { date: vestibular.start_registration, label: 'Início das inscrições' },
+                    { date: vestibular.end_registration, label: 'Fim das inscrições' },
+                    { date: vestibular.payment_deadline, label: 'Prazo de pagamento' },
+                    { date: vestibular.exemption_deadline, label: 'Prazo para isenção' },
+                    { date: vestibular.first_phase_date, label: 'Primeira fase' },
+                    { date: vestibular.second_phase_date, label: 'Segunda fase' },
+                    { date: vestibular.results_date, label: 'Resultados' },
+                    { date: vestibular.first_call_date, label: 'Primeira chamada' },
+                    { date: vestibular.enrollment_date, label: 'Matrícula' },
+                    { date: vestibular.second_call_date, label: 'Segunda chamada' }
+                ];
 
-            for (const { date, label } of datesToAlert) {
-                if (date) {
-                    const alertDate = new Date(date);
-                    alertDate.setDate(alertDate.getDate() - 1); // Alerta 1 dia antes
-                    schedule.scheduleJob(alertDate, async () => {
-                        await sendAlertEmail(
-                            user.email,
-                            `Alerta: ${label} - ${vestibular.name}`,
-                            `Olá ${user.name},\n\nAmanhã é o ${label} do vestibular ${vestibular.name} (${vestibular.institution}).\nNão perca!`
-                        );
-                    });
+                for (const { date, label } of datesToAlert) {
+                    if (date) {
+                        const alertDate = new Date(date);
+                        alertDate.setDate(alertDate.getDate() - 1); // Alerta 1 dia antes
+                        schedule.scheduleJob(alertDate, async () => {
+                            await sendAlertEmail(
+                                user.email,
+                                `Alerta: ${label} - ${vestibular.name}`,
+                                `Olá ${user.name},\n\nAmanhã é o ${label} do vestibular ${vestibular.name} (${vestibular.institution}).\nNão perca!`
+                            );
+                        });
+                    }
                 }
             }
         }
+        console.log('Agendamento de alertas configurado com sucesso!');
+    } catch (error) {
+        console.error('Erro ao agendar alertas:', error.message);
     }
 };
 
 // Executar agendamento de alertas ao iniciar o servidor
 scheduleAlerts();
 
-// Iniciar o servidor
-app.listen(PORT, () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
-});
+// Iniciar o servidor (para testes locais, mas não necessário no Vercel)
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`Servidor rodando na porta ${PORT}`);
+    });
+}
