@@ -510,6 +510,7 @@ schedule.scheduleJob('0 0 * * *', checkAndSendAlerts);
 checkAndSendAlerts();
 
 // Iniciar o servidor
-app.listen(port, () => {
-    console.log(`Servidor rodando em http://localhost:${port}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
 });
