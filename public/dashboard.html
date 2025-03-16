@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - SaaS de Alertas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        h1, h2 {
+            text-align: center;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .vestibular-list, .selected-vestibulares {
+            margin-top: 20px;
+        }
+        .vestibular-item {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        button {
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        #error-message {
+            color: red;
+            text-align: center;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Dashboard</h1>
+    <p id="userName" style="text-align: center; color: #555;">Bem-vindo(a), Carregando...</p>
+    <div class="container">
+        <h2>Seu Plano</h2>
+        <div id="currentPlan"></div>
+        <div>
+            <h3>Fazer Upgrade</h3>
+            <button onclick="upgradePlan(2)">Intermediário (R$9,99/ano)</button>
+            <button onclick="upgradePlan(3)">Premium (R$19,99/ano)</button>
+        </div>
+
+        <h2>Selecionar Vestibulares</h2>
+        <div class="vestibular-list" id="vestibularList"></div>
+        <div id="error-message"></div>
+
+        <h2>Vestibulares Escolhidos</h2>
+        <div class="selected-vestibulares" id="selectedVestibulares">
+            <table id="selectedTable">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Instituição</th>
+                        <th>Início das Inscrições</th>
+                        <th>Fim das Inscrições</th>
+                        <th>Pagamento</th>
+                        <th>Isenção</th>
+                        <th>1ª Fase</th>
+                        <th>2ª Fase</th>
+                        <th>Resultados</th>
+                        <th>1ª Chamada</th>
+                        <th>Matrícula</th>
+                        <th>2ª Chamada</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button onclick="logout()" style="background-color: #dc3545;">Sair</button>
+        </div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem('token');
+
+        // Verificar autenticação ao carregar a página
+        async function checkAuth() {
+            try {
+                const response = await fetch('/auth/dashboard', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    localStorage.removeItem('token');
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Erro ao verificar autenticação:', error);
+                window.location.href = '/';
+            }
+        }
+
+        // Carregar dados do usuário
+        async function loadUserData() {
+            try {
+                const response = await fetch('/user', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error('Erro ao buscar dados do usuário');
+                }
+                const user = await response.json();
+                document.getElementById('userName').textContent = `Bem-vindo(a), ${user.name}!`;
+            } catch (error) {
+                document.getElementById('error-message').textContent = 'Erro ao carregar dados do usuário: ' + error.message;
+            }
+        }
+
+        // Carregar informações do plano atual
+        async function loadCurrentPlan() {
+            try {
+                const response = await fetch('/user/plan', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error('Erro ao buscar plano');
+                }
+                const plan = await response.json();
+                document.getElementById('currentPlan').innerHTML = `
+                    <p style="font-size: 1.2em; font-weight: bold; color: #007bff; background-color: #e9ecef; padding: 10px; border-radius: 5px;">
+                        Seu plano atual é: <span style="color: #28a745;">${plan.name}</span> 
+                        (Limite: ${plan.limit_vestibulares === -1 ? 'Ilimitado' : plan.limit_vestibulares} vestibulares)
+                    </p>
+                `;
+            } catch (error) {
+                document.getElementById('error-message').textContent = 'Erro ao carregar plano: ' + error.message;
+            }
+        }
+
+        // Carregar a lista de vestibulares disponíveis
+        async function loadVestibulares() {
+            try {
+                const response = await fetch('/vestibulares', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error('Erro ao buscar vestibulares');
+                }
+                const vestibulares = await response.json();
+
+                const vestibularList = document.getElementById('vestibularList');
+                vestibularList.innerHTML = '';
+                vestibulares.forEach(vestibular => {
+                    const div = document.createElement('div');
+                    div.className = 'vestibular-item';
+                    div.innerHTML = `
+                        ${vestibular.name} (${vestibular.institution})
+                        <button onclick="selectVestibular(${vestibular.id}, '${vestibular.name}', '${vestibular.institution}')">Selecionar</button>
+                    `;
+                    vestibularList.appendChild(div);
+                });
+            } catch (error) {
+                document.getElementById('error-message').textContent = 'Erro ao carregar vestibulares: ' + error.message;
+            }
+        }
+
+        // Carregar os vestibulares escolhidos pelo usuário
+        async function loadSelectedVestibulares() {
+            try {
+                const response = await fetch('/user/vestibulares', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error('Erro ao buscar vestibulares selecionados');
+                }
+                const selectedVestibulares = await response.json();
+
+                const tbody = document.querySelector('#selectedTable tbody');
+                tbody.innerHTML = '';
+                selectedVestibulares.forEach(vestibular => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${vestibular.name}</td>
+                        <td>${vestibular.institution}</td>
+                        <td>${vestibular.start_registration || 'N/A'}</td>
+                        <td>${vestibular.end_registration || 'N/A'}</td>
+                        <td>${vestibular.payment_deadline || 'N/A'}</td>
+                        <td>${vestibular.exemption_deadline || 'N/A'}</td>
+                        <td>${vestibular.first_phase_date || 'N/A'}</td>
+                        <td>${vestibular.second_phase_date || 'N/A'}</td>
+                        <td>${vestibular.results_date || 'N/A'}</td>
+                        <td>${vestibular.first_call_date || 'N/A'}</td>
+                        <td>${vestibular.enrollment_date || 'N/A'}</td>
+                        <td>${vestibular.second_call_date || 'N/A'}</td>
+                        <td><button onclick="deselectVestibular(${vestibular.id})">Remover</button></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (error) {
+                document.getElementById('error-message').textContent = 'Erro ao carregar vestibulares selecionados: ' + error.message;
+            }
+        }
+
+        // Selecionar um vestibular
+        async function selectVestibular(id, name, institution) {
+            try {
+                const response = await fetch('/user/vestibulares', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ vestibular_id: id })
+                });
+
+                if (response.ok) {
+                    loadSelectedVestibulares();
+                } else {
+                    const result = await response.json();
+                    alert(result.error);
+                }
+            } catch (error) {
+                alert('Erro ao selecionar vestibular: ' + error.message);
+            }
+        }
+
+        // Desselecionar um vestibular
+        async function deselectVestibular(vestibular_id) {
+            try {
+                const response = await fetch(`/user/vestibulares/${vestibular_id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    loadSelectedVestibulares();
+                } else {
+                    const result = await response.json();
+                    alert(result.error);
+                }
+            } catch (error) {
+                alert('Erro ao remover vestibular: ' + error.message);
+            }
+        }
+
+        // Fazer upgrade de plano
+        async function upgradePlan(planId) {
+            try {
+                const response = await fetch('/create-subscription', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ plan_id: planId })
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    window.location.href = result.payment_url;
+                } else {
+                    alert(result.error);
+                }
+            } catch (error) {
+                alert('Erro ao processar pagamento: ' + error.message);
+            }
+        }
+
+        // Função de logout
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+
+        // Carregar os dados ao abrir a página
+        checkAuth();
+        loadUserData();
+        loadCurrentPlan();
+        loadVestibulares();
+        loadSelectedVestibulares();
+    </script>
+</body>
+</html>

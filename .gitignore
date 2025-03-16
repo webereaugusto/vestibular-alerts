@@ -1,0 +1,4 @@
+node_modules/
+vestibular_alerts.db
+.env
+*.log
