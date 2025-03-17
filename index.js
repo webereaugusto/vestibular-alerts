@@ -77,9 +77,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // Configuração do Mercado Pago (novo formato para versão 2.x)
-mercadopago.configure({
-    access_token: process.env.MERCADO_PAGO_ACCESS_TOKEN
-});
+mercadopago.configurations.setAccessToken(process.env.MERCADO_PAGO_ACCESS_TOKEN);
 
 // Middleware para autenticação JWT
 const authenticateToken = (req, res, next) => {
