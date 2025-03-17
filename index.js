@@ -53,18 +53,18 @@ async function initializeDatabase() {
         console.log('Tabelas criadas com sucesso!');
     } catch (err) {
         console.error('Erro ao criar tabelas:', err.stack);
-        process.exit(1);
+        throw err;
     }
 }
 
 // Teste de conexão com o banco
-pool.connect((err) => {
+pool.connect(async (err) => {
     if (err) {
         console.error('Erro ao conectar ao banco:', err.stack);
-        process.exit(1);
+        throw err;
     }
     console.log('Conexão com o banco estabelecida!');
-    initializeDatabase();
+    await initializeDatabase();
 });
 
 // Configuração do Nodemailer para envio de e-mails
@@ -76,7 +76,7 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// Configuração do Mercado Pago
+// Configuração do Mercado Pago (novo formato para versão 2.x)
 mercadopago.configure({
     access_token: process.env.MERCADO_PAGO_ACCESS_TOKEN
 });
@@ -239,11 +239,5 @@ app.get('/', (req, res) => {
     res.send('Aplicação funcionando!');
 });
 
-// Iniciar o servidor localmente (para testes)
-if (process.env.NODE_ENV !== 'production') {
-    app.listen(3000, () => {
-        console.log('Servidor rodando na porta 3000');
-    });
-}
-
+// Exportar a função handler para Vercel
 module.exports = app;
